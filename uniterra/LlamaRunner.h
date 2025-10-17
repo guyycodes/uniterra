@@ -1,0 +1,20 @@
+//
+//  LlamaRunner.h
+//  uniterra
+//
+//  Created by Guy Morgan Beals on 10/17/25.
+//
+
+#import <Foundation/Foundation.h>
+
+NS_ASSUME_NONNULL_BEGIN
+
+@interface LlamaRunner : NSObject
+
+- (instancetype)initWithModelPath:(NSString *)modelPath;
+- (nullable NSString *)generateResponseForPrompt:(NSString *)prompt;
+- (void)cleanup;
+
+@end
+
+NS_ASSUME_NONNULL_END

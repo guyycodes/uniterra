@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSCameraUsageDescription</key>
+    <string>This app needs camera access to scan QR codes for joining private chat rooms.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>litchat</string>
+            </array>
+            <key>CFBundleURLName</key>
+            <string>com.levelupco.litchat</string>
+        </dict>
+    </array>
+    <key>UILaunchScreen</key>
+    <dict>
+        <key>UIColorName</key>
+        <string>#1E1E22</string>
+        <key>UIImageName</key>
+        <string></string>
+        <key>UILaunchScreen</key>
+        <dict/>
+    </dict>
+</dict>
+</plist>
