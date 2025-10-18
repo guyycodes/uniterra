@@ -150,7 +150,7 @@ extension ModelManager {
         """
 
         // Factory so you can switch runtimes (llama.cpp vs MLC) without changing callers.
-        var runtimeFactory: () -> LLMRuntime = { LlamaCppRuntime() }
+        var runtimeFactory: () -> LLMRuntime = { LlamaManager() }
     }
 }
 
@@ -195,44 +195,6 @@ struct GenerationParams {
     var topK: Int32
     var repeatPenalty: Float
     var maxTokens: Int32
-}
-
-// MARK: - Llama.cpp default runtime (stub)
-
-final class LlamaCppRuntime: LLMRuntime {
-    private var isLoaded = false
-    // private var ctx: LlamaContext? // hook up your binding
-
-    func loadModel(at localURL: URL, context: Int) throws {
-        // TODO: wire up your llama.cpp Swift binding here:
-        // self.ctx = try LlamaContext(path: localURL.path, nCtx: context, useMetal: true)
-        // guard ctx != nil else { throw ModelError.runtimeUnavailable }
-        isLoaded = true
-    }
-
-    func generate(
-        systemPrompt: String,
-        userPrompt: String,
-        params: GenerationParams,
-        onToken: ((String) -> Void)?
-    ) async throws -> String {
-        guard isLoaded else { throw ModelError.modelNotLoaded }
-
-        let prompt = """
-        [System]Component
-        \(systemPrompt)
-
-        [User]
-        \(userPrompt)
-        """
-
-        // TODO: call into llama.cpp with streaming; forward tokens to onToken?
-        return "⟨translation⟩"
-    }
-
-    func cancel() {
-        // TODO: forward to llama.cpp cancel if supported
-    }
 }
 
 // MARK: - File store (download + checksum + version pin)
@@ -308,8 +270,18 @@ private final class FileStore {
             }
         }
 
+        print("🔗 Downloading from: \(remote.absoluteString)")
+        
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let http = response as? HTTPURLResponse, (200...206).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse else {
+            print("❌ No HTTP response received")
+            throw ModelError.networkFailure
+        }
+        
+        print("📡 HTTP Status Code: \(http.statusCode)")
+        
+        guard (200...206).contains(http.statusCode) else {
+            print("❌ Download failed with status: \(http.statusCode)")
             throw ModelError.networkFailure
         }
 

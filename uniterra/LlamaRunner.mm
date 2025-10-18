@@ -15,15 +15,23 @@
     llama_model *model;
     llama_context *ctx;
     llama_sampler *sampler;
+    int32_t contextSize;  // Store context size for recreation
 }
 
-- (instancetype)initWithModelPath:(NSString *)modelPath {
+- (instancetype)initWithModelPath:(NSString *)modelPath contextSize:(int)ctxSize {
     self = [super init];
     if (self) {
-        NSLog(@"🔥 Initializing llama with model: %@", modelPath);
+        NSLog(@"🔥 Initializing llama with model: %@, context: %d", modelPath, ctxSize);
         
-        // Initialize llama backend
-        llama_backend_init();
+        // Store context size for later recreation
+        self->contextSize = ctxSize;
+        
+        // Initialize llama backend ONCE globally (not per-instance)
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            llama_backend_init();
+            NSLog(@"✅ llama_backend initialized (one-time global init)");
+        });
         
         // Model parameters
         llama_model_params model_params = llama_model_default_params();
@@ -44,7 +52,7 @@
         
         // Context parameters
         llama_context_params ctx_params = llama_context_default_params();
-        ctx_params.n_ctx = 512; // Context size
+        ctx_params.n_ctx = ctxSize;
         ctx_params.n_batch = 512;
         ctx_params.n_threads = 4;
         
@@ -59,27 +67,44 @@
         
         NSLog(@"✅ Context created successfully");
         
-        // Create sampler
-        auto sparams = llama_sampler_chain_default_params();
-        sampler = llama_sampler_chain_init(sparams);
-        llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.7f));
-        llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.9f, 1));
-        llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+        // Sampler will be created per generation with specific params
+        sampler = nullptr;
         
         NSLog(@"✅ LlamaRunner initialized - Metal should be active!");
     }
     return self;
 }
 
-- (nullable NSString *)generateResponseForPrompt:(NSString *)prompt {
-    if (!ctx || !model) {
-        NSLog(@"❌ Context or model is null");
+- (nullable NSString *)generateResponseForPrompt:(NSString *)prompt
+                                     temperature:(float)temperature
+                                            topP:(float)topP
+                                       maxTokens:(int)maxTokens {
+    if (!model) {
+        NSLog(@"❌ Model is null");
         return nil;
     }
     
-    NSLog(@"🔥 Generating response for: %@", prompt);
+    NSLog(@"🔥 Generating response with temp:%.2f, topP:%.2f, maxTokens:%d", temperature, topP, maxTokens);
     
-    // Get vocab
+    // Recreate context for fresh state (no KV cache conflicts)
+    if (ctx) {
+        llama_free(ctx);
+        ctx = nil;
+    }
+    
+    llama_context_params ctx_params = llama_context_default_params();
+    ctx_params.n_ctx = contextSize;  // Use stored context size
+    ctx_params.n_batch = 512;
+    ctx_params.n_threads = 4;
+    
+    ctx = llama_new_context_with_model(model, ctx_params);
+    if (!ctx) {
+        NSLog(@"❌ Failed to recreate context");
+        return nil;
+    }
+    NSLog(@"✅ Context recreated with fresh KV cache");
+    
+    // Get vocab for tokenization
     const struct llama_vocab * vocab = llama_model_get_vocab(model);
     
     // Tokenize prompt
@@ -88,7 +113,7 @@
     
     tokens_list.resize(512);
     int n_tokens = llama_tokenize(
-        vocab,
+        vocab,  // Changed from 'model' to 'vocab'
         prompt_c,
         strlen(prompt_c),
         tokens_list.data(),
@@ -100,7 +125,7 @@
     if (n_tokens < 0) {
         tokens_list.resize(-n_tokens);
         n_tokens = llama_tokenize(
-            vocab,
+            vocab,  // Changed from 'model' to 'vocab'
             prompt_c,
             strlen(prompt_c),
             tokens_list.data(),
@@ -140,16 +165,23 @@
     
     NSLog(@"✅ Initial decode successful");
     
+    // Create sampler with provided parameters
+    auto sparams = llama_sampler_chain_default_params();
+    llama_sampler * local_sampler = llama_sampler_chain_init(sparams);
+    llama_sampler_chain_add(local_sampler, llama_sampler_init_temp(temperature));
+    llama_sampler_chain_add(local_sampler, llama_sampler_init_top_p(topP, 1));
+    llama_sampler_chain_add(local_sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    
     // Generate tokens
     NSMutableString *result = [NSMutableString string];
     int n_generated = 0;
-    const int max_tokens = 100;
+    const int max_tokens = maxTokens;
     
     while (n_generated < max_tokens) {
-        llama_token new_token = llama_sampler_sample(sampler, ctx, -1);
+        llama_token new_token = llama_sampler_sample(local_sampler, ctx, -1);
         
         // Check for end of generation token
-        if (new_token == llama_vocab_eos(vocab)) {
+        if (llama_vocab_is_eog(vocab, new_token)) {
             NSLog(@"🏁 EOS token reached");
             break;
         }
@@ -182,6 +214,7 @@
     }
     
     llama_batch_free(batch);
+    llama_sampler_free(local_sampler);
     
     NSLog(@"✅ Generated %d tokens", n_generated);
     NSLog(@"📤 Response: %@", result);
@@ -190,10 +223,7 @@
 }
 
 - (void)cleanup {
-    if (sampler) {
-        llama_sampler_free(sampler);
-        sampler = nil;
-    }
+    // Sampler is now created per generation, no need to clean up here
     if (ctx) {
         llama_free(ctx);
         ctx = nil;
@@ -202,7 +232,8 @@
         llama_model_free(model);
         model = nil;
     }
-    llama_backend_free();
+    // Don't free llama_backend since it's now a global singleton
+    // llama_backend_free();
 }
 
 - (void)dealloc {

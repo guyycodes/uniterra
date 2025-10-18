@@ -15,6 +15,9 @@ struct RulesModal: View {
     
     @State private var selectedLanguage: String = ""
     @State private var isUpdatingLanguage: Bool = false
+    @State private var selectedModelId: String = UserDefaults.standard.string(forKey: "selectedModelId") ?? ModelDefinition.qwen8BInstruct.id
+    @State private var isDownloadingModel = false
+    @State private var downloadProgress: Double = 0.0
 
     var body: some View {
         ZStack {
@@ -26,6 +29,8 @@ struct RulesModal: View {
                 if authManager.userProfile?.language == nil {
                     languageSelectionSection
                 }
+                
+                modelSelectionSection
                 
                 roomRulesSection
                 
@@ -141,6 +146,102 @@ struct RulesModal: View {
         }
     }
     
+    // MARK: - Model Selection Section
+    private var modelSelectionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Translation Model")
+                .font(.headline)
+                .foregroundColor(.white)
+            
+            Text("Select the AI model for translation")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.7))
+            
+            VStack(spacing: 10) {
+                ForEach(ModelDefinition.availableModels, id: \.id) { model in
+                    modelOption(model)
+                }
+            }
+            
+            if isDownloadingModel {
+                HStack {
+                    ProgressView()
+                        .tint(Color(hex: "#F6511E"))
+                    Text("Downloading model... \(Int(downloadProgress * 100))%")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.black.opacity(0.2))
+                )
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.black.opacity(0.3))
+        )
+    }
+    
+    private func modelOption(_ model: ModelDefinition) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text(model.name)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                    
+                    if isModelDownloaded(model) {
+                        Image(systemName: "checkmark.seal.fill")
+                            .foregroundColor(Color(hex: "#10B981"))
+                            .font(.caption)
+                    }
+                }
+                
+                Text(model.description)
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            
+            Spacer()
+            
+            Image(systemName: selectedModelId == model.id ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(
+                    selectedModelId == model.id
+                    ? Color(hex: "#F6511E")
+                    : Color.white.opacity(0.4)
+                )
+                .font(.system(size: 20))
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(
+                    selectedModelId == model.id
+                    ? Color(hex: "#F6511E").opacity(0.2)
+                    : Color.white.opacity(0.05)
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(
+                    selectedModelId == model.id
+                    ? Color(hex: "#F6511E").opacity(0.5)
+                    : Color.white.opacity(0.2),
+                    lineWidth: 1
+                )
+        )
+        .onTapGesture {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                selectedModelId = model.id
+                UserDefaults.standard.set(model.id, forKey: "selectedModelId")
+            }
+        }
+    }
+    
     // MARK: - Room Rules Section
     private var roomRulesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -229,11 +330,56 @@ struct RulesModal: View {
             isUpdatingLanguage = true
             Task {
                 await authManager.updateUserLanguage(selectedLanguage)
+                await configureSelectedModel()
                 isUpdatingLanguage = false
                 onAgree()
             }
         } else if authManager.userProfile?.language != nil {
-            onAgree()
+            Task {
+                await configureSelectedModel()
+                onAgree()
+            }
         }
+    }
+    
+    private func configureSelectedModel() async {
+        guard let model = ModelDefinition.availableModels.first(where: { $0.id == selectedModelId }) else {
+            return
+        }
+        
+        // Configure ModelManager with selected model
+        let config = ModelManager.Config(
+            modelRemoteURL: URL(string: model.huggingFaceURL)!,
+            modelFilename: model.filename,
+            modelSHA256: model.sha256,
+            contextLength: model.contextLength,
+            temperature: 0.2,
+            topP: 0.95,
+            topK: 64,
+            repeatPenalty: 1.05,
+            maxTokens: 256
+        )
+        
+        ModelManager.shared.configure(config)
+        print("Model configured: \(model.name)")
+        
+        // Pre-load model in background if already downloaded (warm it up)
+        if isModelDownloaded(model) {
+            Task.detached(priority: .background) {
+                do {
+                    print("🔥 Pre-loading model in background...")
+                    try await ModelManager.shared.prepareModel()
+                    print("✅ Model pre-loaded and ready!")
+                } catch {
+                    print("⚠️ Model pre-load failed (will retry when needed): \(error)")
+                }
+            }
+        }
+    }
+    
+    private func isModelDownloaded(_ model: ModelDefinition) -> Bool {
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let modelPath = documentsDir.appendingPathComponent(model.filename)
+        return FileManager.default.fileExists(atPath: modelPath.path)
     }
 }

@@ -11,8 +11,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface LlamaRunner : NSObject
 
-- (instancetype)initWithModelPath:(NSString *)modelPath;
-- (nullable NSString *)generateResponseForPrompt:(NSString *)prompt;
+- (instancetype)initWithModelPath:(NSString *)modelPath contextSize:(int)contextSize;
+- (nullable NSString *)generateResponseForPrompt:(NSString *)prompt
+                                     temperature:(float)temperature
+                                            topP:(float)topP
+                                       maxTokens:(int)maxTokens;
 - (void)cleanup;
 
 @end

@@ -13,11 +13,15 @@ struct ChatView: View {
     @State var messageManager: MessageManager
     let roomName: String
     
-    // 👇 ADD: observe the shared model manager (no other files touched)
-    @ObservedObject private var translator = ModelManager.shared
+    // REMOVE @ObservedObject - it's triggering initialization!
     @State private var isTranslating = false
     @State private var translationResult: String?
     @State private var translationError: String?
+    @State private var modelDownloadProgress: Double = 0.0
+    @State private var isDownloadingModel = false
+    @State private var currentMessageText: String = ""  // Track current input text
+    @State private var modelThoughts: String = ""  // Store model's thinking process
+    @State private var showThoughts = false  // Toggle for expanding thoughts
     
     init(roomId: String = "general", roomName: String = "Chat") {
         messageManager = MessageManager(roomId: roomId)
@@ -27,46 +31,23 @@ struct ChatView: View {
     var body: some View {
         ZStack {
             // Background
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(hex: "#1E1E22"),
-                    Color(hex: "#2D2D35")
-                ]),
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            Color(hex: "#1E1E22")
+                .ignoresSafeArea()
+                .onTapGesture {
+                    hideKeyboard()
+                }
             
             if messageManager.isLoading {
                 // Loading state
-                VStack(spacing: 16) {
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .tint(Color(hex: "#F6511E"))
-                    
-                    Text("Loading messages...")
-                        .foregroundColor(.white.opacity(0.7))
-                        .font(.subheadline)
-                }
+                ProgressView()
+                    .tint(Color(hex: "#F6511E"))
             } else {
                 // Chat content
                 VStack(spacing: 0) {
                     ScrollView {
-                        VStack(spacing: 8) {
+                        LazyVStack(spacing: 8) {
                             if messageManager.messages.isEmpty {
-                                // Empty state
-                                VStack(spacing: 12) {
-                                    Text("💬")
-                                        .font(.system(size: 60))
-                                    Text("No messages yet")
-                                        .font(.headline)
-                                        .foregroundColor(.white.opacity(0.7))
-                                    Text("Be the first to send a message!")
-                                        .font(.subheadline)
-                                        .foregroundColor(.white.opacity(0.5))
-                                }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .padding(.top, 100)
+                                emptyState
                             } else {
                                 ForEach(messageManager.messages) { message in
                                     MessageRow(
@@ -79,247 +60,389 @@ struct ChatView: View {
                         .padding(.top, 8)
                     }
                     .defaultScrollAnchor(.bottom)
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            hideKeyboard()
+                        }
+                    )
                     
-                    SendMessageView { messageText in
+                    if let translation = translationResult {
+                        translationOverlay(translation)
+                    }
+                    
+                    SendMessageView(messageText: $currentMessageText) { messageText in
                         messageManager.sendMessage(text: messageText, username: authManager.userEmail ?? "")
+                        currentMessageText = ""  // Clear after sending
                     }
                 }
             }
-            // 👇 ADD: lightweight progress HUD when preparing or translating
-            if translator.isPreparing || isTranslating {
+            
+            // Progress Overlay
+            if isDownloadingModel || isTranslating {
                 VStack {
                     Spacer()
-                    HStack(spacing: 12) {
-                        ProgressView()
-                            .tint(Color(hex: "#F6511E"))
-                        if translator.isPreparing, let p = translator.downloadProgress {
-                            Text("Preparing model… \(Int(p * 100))%")
-                                .foregroundColor(.white.opacity(0.9))
-                                .font(.footnote)
-                        } else if translator.isPreparing {
-                            Text("Preparing model…")
-                                .foregroundColor(.white.opacity(0.9))
-                                .font(.footnote)
-                        } else {
-                            Text("Translating…")
-                                .foregroundColor(.white.opacity(0.9))
-                                .font(.footnote)
-                        }
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .padding(.bottom, 16)
+                    progressOverlay
                 }
-                .transition(.opacity)
             }
         }
         .navigationTitle(roomName)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbar {
-            // 👇 ADD: simple Translate button (does not replace your Sign out)
             ToolbarItem(placement: .navigationBarLeading) {
-                Button {
+                Button("Translate") {
                     runTranslate()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "globe")
-                        Text("Translate")
-                    }
                 }
-                .disabled(translator.isPreparing || isTranslating)
+                .disabled(isDownloadingModel || isTranslating)
             }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: {
+                Button("Sign out") {
                     authManager.signOut()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                        Text("Sign out")
-                    }
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(hex: "#F6511E"), Color(hex: "#FF8C37")],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
                 }
             }
         }
-        // 👇 ADD: show translation or error
-                .alert("Translation", isPresented: Binding(
-                    get: { translationResult != nil },
-                    set: { if !$0 { translationResult = nil } }
-                )) {
-                    Button("OK", role: .cancel) { translationResult = nil }
-                } message: {
-                    Text(translationResult ?? "")
-                }
-                .alert("Translation Error", isPresented: Binding(
-                    get: { translationError != nil },
-                    set: { if !$0 { translationError = nil } }
-                )) {
-                    Button("OK", role: .cancel) { translationError = nil }
-                } message: {
-                    Text(translationError ?? "Unknown error")
+        .alert("Translation Error", isPresented: Binding(
+            get: { translationError != nil },
+            set: { if !$0 { translationError = nil } }
+        )) {
+            Button("OK", role: .cancel) { translationError = nil }
+        } message: {
+            Text(translationError ?? "Unknown error")
+        }
+    }
+    
+    // MARK: - Subviews
+    
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Text("💬").font(.system(size: 60))
+            Text("No messages yet")
+                .foregroundColor(.white.opacity(0.7))
+        }
+        .frame(maxHeight: .infinity)
+        .padding(.top, 100)
+    }
+    
+    private var progressOverlay: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                ProgressView().tint(Color(hex: "#F6511E"))
+                
+                if isDownloadingModel {
+                    Text("Downloading...")
+                        .foregroundColor(.white)
+                } else if isTranslating {
+                    // Animated thinking display
+                    HStack(spacing: 2) {
+                        Text("Thinking")
+                            .foregroundColor(.white)
+                        ThinkingDots()
+                    }
                 }
             }
-
-            // 👇 ADD: helper to run translation without touching your existing flow
-            private func runTranslate() {
-                // Ensure user has language set
-                guard let targetLanguage = authManager.userProfile?.language else {
-                    translationError = "Please set your language in the main screen"
-                    return
+        }
+        .padding()
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .padding(.bottom, 16)
+    }
+    
+    private func translationOverlay(_ translation: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Header
+            HStack {
+                Text(currentMessageText.isEmpty ? "📚 Translation (from chat)" : "✏️ Translation (your text)")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.7))
+                Spacer()
+                Button {
+                    translationResult = nil
+                    modelThoughts = ""
+                    showThoughts = false
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.white.opacity(0.6))
+                }
+            }
+            .padding(.horizontal, 12)
+            
+            // Expandable thoughts section (if present)
+            if !modelThoughts.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showThoughts.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: showThoughts ? "chevron.down.circle" : "chevron.right.circle")
+                                .font(.caption)
+                            Text("Model thoughts")
+                                .font(.caption2)
+                            Spacer()
+                        }
+                        .foregroundColor(.white.opacity(0.5))
+                    }
+                    .padding(.horizontal, 12)
+                    
+                    if showThoughts {
+                        ScrollView(.vertical, showsIndicators: false) {
+                            Text(modelThoughts)
+                                .font(.caption2)
+                                .foregroundColor(.white.opacity(0.6))
+                                .padding(.horizontal, 12)
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 100)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                    }
+                }
+            }
+            
+            // Main translation result
+            HStack {
+                Text(translation)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .textSelection(.enabled)
+                Spacer()
+            }
+            .padding(12)
+            .background(Color(hex: "#2D2D35"))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .padding(.horizontal, 12)
+        }
+        .padding(.vertical, 8)
+    }
+    
+    // MARK: - Translation Logic
+    
+    private func runTranslate() {
+        guard let targetLanguage = authManager.userProfile?.language else {
+            translationError = "Please set your language"
+            return
+        }
+        
+        // PRIORITY 1: Check if there's text in the input field
+        let sourceText: String
+        if !currentMessageText.isEmpty {
+            sourceText = currentMessageText
+            print("🎯 Translating from INPUT FIELD: \(sourceText)")
+        } else {
+            // PRIORITY 2: Look for latest incoming message
+            print("🔍 Latest messages:")
+            for msg in messageManager.messages.suffix(3) {
+                print("  - \(msg.username): \(msg.text)")
+            }
+            
+            let sample = "Hey, can you meet at 3pm?"
+            let latestIncoming = messageManager.messages
+                .reversed() // Start from most recent
+                .first(where: { $0.username != authManager.userEmail })?.text
+            sourceText = latestIncoming ?? sample
+            
+            print("🎯 Translating from MESSAGES: \(sourceText)")
+        }
+        
+        Task.detached(priority: .userInitiated) {
+            do {
+                await ensureModelConfiguration()
+                
+                if await !ModelManager.shared.isReady {
+                    await MainActor.run { isDownloadingModel = true }
+                    
+                    try await ModelManager.shared.prepareModel { progress in
+                        Task { @MainActor in
+                            self.modelDownloadProgress = progress
+                        }
+                    }
+                    await MainActor.run { isDownloadingModel = false }
                 }
                 
-                // Pick something sensible to translate:
-                // - If there are messages, use the latest incoming one
-                // - Else, use a short sample text
-                let sample = "Hey, can you meet at 3pm?"
-                let latestIncoming = messageManager.messages.last(where: { authManager.userEmail != $0.username })?.text
-                let sourceText = latestIncoming ?? sample
-
-                isTranslating = true
-                Task {
-                    do {
-                        let output = try await ModelManager.shared.ensureAndTranslate(
-                            sourceText,
-                            targetLang: targetLanguage,
-                            onToken: nil // you can stream to UI if you want
-                        )
-                        translationResult = "Original message translated to \(targetLanguage):\n\n\(output)"
-                    } catch {
-                        translationError = error.localizedDescription
-                    }
+                await MainActor.run {
+                    isTranslating = true
+                }
+                
+                // Get translation (onToken gets full response, not streaming)
+                let output = try await ModelManager.shared.translate(
+                    sourceText,
+                    targetLang: targetLanguage,
+                    onToken: nil  // Not actually streaming, so don't bother
+                    // COMMENTED OUT FOR NOW BECAUSE IT'S NOT WORKING and not implmented
+                    // onToken: { token in
+                    //     fullOutput += token
+                        
+                    //     // Update streaming thought display
+                    //     Task { @MainActor in
+                    //         // Extract current thinking content if in thinking tags
+                    //         if fullOutput.contains("<think>") && !fullOutput.contains("</think>") {
+                    //             // We're in the middle of thinking - show last line
+                    //             let thinkStart = fullOutput.range(of: "<think>")!
+                    //             let thoughtContent = String(fullOutput[thinkStart.upperBound...])
+                    //                 .replacingOccurrences(of: "\n", with: " ")
+                    //                 .trimmingCharacters(in: .whitespacesAndNewlines)
+                                
+                    //             // Show last 80 characters of current thought
+                    //             if thoughtContent.count > 80 {
+                    //                 streamingThought = "..." + String(thoughtContent.suffix(80))
+                    //             } else {
+                    //                 streamingThought = thoughtContent
+                    //             }
+                    //         }
+                    //     }
+                    // }
+                    
+                )
+                
+                await MainActor.run {
+                    let parsed = parseTranslation(output)
+                    translationResult = parsed.translation
+                    modelThoughts = parsed.thoughts
                     isTranslating = false
+                }
+            } catch {
+                await MainActor.run {
+                    translationError = "Translation failed: \(error.localizedDescription)"
+                    isTranslating = false
+                    isDownloadingModel = false
                 }
             }
         }
+    }
+    
+    private func parseTranslation(_ rawOutput: String) -> (translation: String, thoughts: String) {
+        // Remove chat template markers first
+        var cleaned = rawOutput
+            .replacingOccurrences(of: "<|im_start|>assistant", with: "")
+            .replacingOccurrences(of: "<|im_end|>", with: "")
+            .replacingOccurrences(of: "<|im_start|>user", with: "")
+            .replacingOccurrences(of: "<|im_start|>system", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Extract thoughts if present
+        var thoughts = ""
+        var translation = cleaned
+        
+        if let thinkStart = cleaned.range(of: "<think>"),
+           let thinkEnd = cleaned.range(of: "</think>") {
+            // Extract the thinking content
+            let thoughtContent = String(cleaned[thinkStart.upperBound..<thinkEnd.lowerBound])
+            thoughts = thoughtContent.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Remove the entire think block from the output
+            translation = cleaned.replacingOccurrences(of: "<think>\(thoughtContent)</think>", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        // Clean up any remaining newlines and get just the translation
+        translation = translation
+            .split(separator: "\n")
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? translation
+        
+        return (translation: translation, thoughts: thoughts)
+    }
+    
+    private func ensureModelConfiguration() async {
+        let modelId = UserDefaults.standard.string(forKey: "selectedModelId") ?? ModelDefinition.qwen8BInstruct.id
+        guard let model = ModelDefinition.availableModels.first(where: { $0.id == modelId }) else {
+            return
+        }
+        
+        let config = ModelManager.Config(
+            modelRemoteURL: URL(string: model.huggingFaceURL)!,
+            modelFilename: model.filename,
+            modelSHA256: model.sha256,
+            contextLength: model.contextLength,
+            temperature: 0.2,
+            topP: 0.95,
+            topK: 64,
+            repeatPenalty: 1.05,
+            maxTokens: 256
+        )
+        
+        await MainActor.run {
+            ModelManager.shared.configure(config)
+        }
+    }
+    
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
 
 // MARK: - MessageRow
 struct MessageRow: View {
     let text: String
     let isOutgoing: Bool
-
+    
     var body: some View {
         HStack {
-            if isOutgoing {
-                Spacer()
-            }
-            messageBubble
-            if !isOutgoing {
-                Spacer()
-            }
+            if isOutgoing { Spacer() }
+            Text(text)
+                .padding(12)
+                .background(isOutgoing ? Color(hex: "#F6511E") : Color(.systemGray5))
+                .foregroundColor(isOutgoing ? .white : .primary)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            if !isOutgoing { Spacer() }
         }
-    }
-
-    private var messageBubble: some View {
-        Text(text)
-            .fixedSize(horizontal: false, vertical: true)
-            .foregroundStyle(isOutgoing ? .white : .primary)
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 20.0)
-                    .fill(
-                        isOutgoing
-                        ? LinearGradient(
-                            colors: [Color(hex: "#F6511E"), Color(hex: "#FF8C37")],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                        : LinearGradient(
-                            colors: [Color(.systemGray5), Color(.systemGray6)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .shadow(
-                        color: isOutgoing ? Color(hex: "#F6511E").opacity(0.4) : Color.black.opacity(0.1),
-                        radius: isOutgoing ? 8 : 4,
-                        x: 0,
-                        y: 2
-                    )
-            )
-            .padding(isOutgoing ? .trailing : .leading, 12)
-            .containerRelativeFrame(.horizontal, count: 7, span: 5, spacing: 0, alignment: isOutgoing ? .trailing : .leading)
+        .padding(.horizontal, 12)
     }
 }
 
 // MARK: - SendMessageView
 struct SendMessageView: View {
+    @Binding var messageText: String  // Changed from @State to @Binding
     var onSend: (String) -> Void
     
-    @State private var messageText: String = ""
+    @FocusState private var isFocused: Bool
     
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextField("Type a message...", text: $messageText, axis: .vertical)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 22)
-                        .fill(Color(.systemGray6))
-                )
-                .lineLimit(1...5)
-            
-            Button(action: {
-                guard !messageText.isEmpty else { return }
-                onSend(messageText)
-                messageText = ""
-            }) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            messageText.isEmpty
-                            ? LinearGradient(
-                                colors: [Color(.systemGray4), Color(.systemGray5)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                            : LinearGradient(
-                                colors: [Color(hex: "#F6511E"), Color(hex: "#FF8C37")],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 38, height: 38)
-                        .shadow(
-                            color: messageText.isEmpty ? .clear : Color(hex: "#F6511E").opacity(0.5),
-                            radius: 8,
-                            x: 0,
-                            y: 2
-                        )
-                    
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
+        HStack(spacing: 8) {
+            TextField("Message", text: $messageText)
+                .focused($isFocused)
+                .padding(12)
+                .background(Color(.systemGray6))
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .textFieldStyle(.plain)
+                .submitLabel(.send)
+                .onSubmit {
+                    sendMessage()
                 }
+            
+            Button(action: sendMessage) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(messageText.isEmpty ? .gray : Color(hex: "#F6511E"))
             }
             .disabled(messageText.isEmpty)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: messageText.isEmpty)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: 28)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -2)
-        )
-        .padding(.horizontal, 8)
-        .padding(.bottom, 8)
+    }
+    
+    private func sendMessage() {
+        guard !messageText.isEmpty else { return }
+        onSend(messageText)
+        // Parent handles clearing the text now
+        isFocused = false
     }
 }
 
-#Preview {
-    NavigationStack {
-        ChatView(roomId: "general", roomName: "General")
-            .environment(AuthManager())
+// MARK: - ThinkingDots Animation
+struct ThinkingDots: View {
+    @State private var dotCount = 0
+    
+    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()  // Faster
+    
+    var body: some View {
+        Text(String(repeating: ".", count: dotCount))
+            .foregroundColor(.white)
+            .frame(width: 20, alignment: .leading)
+            .animation(.easeInOut(duration: 0.3), value: dotCount)  // Smooth animation
+            .onReceive(timer) { _ in
+                dotCount = (dotCount + 1) % 4
+            }
     }
 }

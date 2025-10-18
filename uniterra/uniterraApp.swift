@@ -26,13 +26,8 @@ struct uniterraApp: App {
             window.backgroundColor = UIColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1.0)
         }
         
-        let cfg = ModelManager.Config(
-          modelRemoteURL: URL(string: "...")!,
-          modelFilename: "qwen2.5-7b-instruct-q4_k_m.gguf",
-          modelSHA256: "PUT_THE_EXACT_SHA256_OF_THE_GGUF_HERE",
-          contextLength: 256, temperature: 0.2, topP: 0.95, topK: 64, repeatPenalty: 1.05, maxTokens: 256
-        )
-        ModelManager.shared.configure(cfg)
+        // Don't configure ModelManager here - let RulesModal do it when needed
+        // This prevents early network connections and file access attempts
     }
 
     var body: some Scene {
