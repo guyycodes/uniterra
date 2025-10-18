@@ -12,42 +12,47 @@ import FirebaseCore
 @main
 struct uniterraApp: App {
     
-    @State private var authManager: AuthManager
+    // 1) Use @StateObject so AuthManager is created once for the app's lifetime
+    @StateObject private var authManager = AuthManager()
+    
+    // 2) Keep ModelManager optional if needed later
     @State private var modelManager: ModelManager?
-    @State private var showSplash = true // <-- Add splash screen state
+    
+    // 3) Track splash screen state
+    @State private var showSplash = true
     
     init() {
+        // Configure Firebase immediately on app launch
         FirebaseApp.configure()
-        authManager = AuthManager()
         
-        // Only set the window background, not the view hierarchy
+        // Optionally set the global window background here (no SwiftUI views yet)
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let window = windowScene.windows.first {
-            window.backgroundColor = UIColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1.0)
+            window.backgroundColor = UIColor(
+                red: 0.12, green: 0.12, blue: 0.13, alpha: 1.0
+            )
         }
         
-        // Don't configure ModelManager here - let RulesModal do it when needed
-        // This prevents early network connections and file access attempts
+        // IMPORTANT: Don't initialize or do network work for ModelManager
+        // here if you want to defer that until a certain view.
     }
 
     var body: some Scene {
         WindowGroup {
             ZStack {
                 if showSplash {
-                    // Show splash screen
                     SplashScreenView()
                         .transition(.opacity)
                 } else {
-                    // Show main app
+                    // 4) Present the correct view depending on whether user is logged in
                     if authManager.user != nil {
-                        // User is logged in - show chat rooms selection
                         ChatRoomsView()
-                            .environment(authManager)
+                            // Make authManager available to child views via environment
+                            .environmentObject(authManager)
                             .transition(.opacity)
                     } else {
-                        // No logged in user - show LoginView
                         LoginView()
-                            .environment(authManager)
+                            .environmentObject(authManager)
                             .transition(.opacity)
                     }
                 }
@@ -68,18 +73,18 @@ struct uniterraApp: App {
     
     // Handle deep links from QR codes
     private func handleDeepLink(url: URL) {
-        // Parse URL like: uniterra://room/private-123456-78910
+        // Parse URL like: uniterra://room/private-123-456
         guard url.scheme == "uniterra",
               url.host == "room",
-              let roomId = url.pathComponents.last else {
+              let roomId = url.pathComponents.last
+        else {
             return
         }
         
         // Store the room ID to handle after authentication
         UserDefaults.standard.set(roomId, forKey: "pendingRoomId")
         
-        // TODO: Navigate to the specific room
-        // This would be handled in ChatRoomsView by checking for pendingRoomId
         print("Opening room: \(roomId)")
+        // Next step: In ChatRoomsView, check `pendingRoomId` and navigate if needed
     }
 }

@@ -8,7 +8,8 @@
 import SwiftUI
 
 struct RulesModal: View {
-    @Environment(AuthManager.self) var authManager
+    @EnvironmentObject var authManager: AuthManager
+    @ObservedObject private var modelManager = ModelManager.shared
     let roomTitle: String
     let onAgree: () -> Void
     let onCancel: () -> Void
@@ -16,8 +17,6 @@ struct RulesModal: View {
     @State private var selectedLanguage: String = ""
     @State private var isUpdatingLanguage: Bool = false
     @State private var selectedModelId: String = UserDefaults.standard.string(forKey: "selectedModelId") ?? ModelDefinition.qwen8BInstruct.id
-    @State private var isDownloadingModel = false
-    @State private var downloadProgress: Double = 0.0
 
     var body: some View {
         ZStack {
@@ -163,19 +162,34 @@ struct RulesModal: View {
                 }
             }
             
-            if isDownloadingModel {
-                HStack {
-                    ProgressView()
-                        .tint(Color(hex: "#F6511E"))
-                    Text("Downloading model... \(Int(downloadProgress * 100))%")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.8))
+            if modelManager.isPreparing {
+                VStack(spacing: 12) {
+                    Text(modelManager.downloadProgress != nil ? "Downloading Model..." : "Loading Model...")
+                        .font(.headline)
+                        .foregroundColor(.white)
+
+                    if let progress = modelManager.downloadProgress {
+                        ProgressView(value: progress, total: 1.0)
+                            .tint(Color(hex: "#F6511E"))
+                            .padding(.horizontal)
+                        Text("\(Int(progress * 100))%")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                    } else {
+                        ProgressView()
+                            .tint(Color(hex: "#F6511E"))
+                        Text("Initializing model for translation...")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                 }
                 .padding()
                 .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.black.opacity(0.2))
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.black.opacity(0.3))
                 )
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.3), value: modelManager.isPreparing)
             }
         }
         .padding()
@@ -292,7 +306,7 @@ struct RulesModal: View {
             handleEnterChat()
         } label: {
             HStack {
-                if isUpdatingLanguage {
+                if modelManager.isPreparing || isUpdatingLanguage {
                     ProgressView()
                         .tint(.white)
                         .scaleEffect(0.8)
@@ -321,7 +335,7 @@ struct RulesModal: View {
     }
     
     private var isEnterChatDisabled: Bool {
-        (authManager.userProfile?.language == nil && selectedLanguage.isEmpty) || isUpdatingLanguage
+        (authManager.userProfile?.language == nil && selectedLanguage.isEmpty) || isUpdatingLanguage || modelManager.isPreparing
     }
     
     private func handleEnterChat() {
@@ -331,13 +345,17 @@ struct RulesModal: View {
             Task {
                 await authManager.updateUserLanguage(selectedLanguage)
                 await configureSelectedModel()
-                isUpdatingLanguage = false
-                onAgree()
+                await MainActor.run {
+                    isUpdatingLanguage = false
+                    onAgree()
+                }
             }
         } else if authManager.userProfile?.language != nil {
             Task {
                 await configureSelectedModel()
-                onAgree()
+                await MainActor.run {
+                    onAgree()
+                }
             }
         }
     }
@@ -360,20 +378,22 @@ struct RulesModal: View {
             maxTokens: 256
         )
         
-        ModelManager.shared.configure(config)
+        await MainActor.run {
+            ModelManager.shared.configure(config)
+        }
         print("Model configured: \(model.name)")
         
-        // Pre-load model in background if already downloaded (warm it up)
-        if isModelDownloaded(model) {
-            Task.detached(priority: .background) {
-                do {
-                    print("🔥 Pre-loading model in background...")
-                    try await ModelManager.shared.prepareModel()
-                    print("✅ Model pre-loaded and ready!")
-                } catch {
-                    print("⚠️ Model pre-load failed (will retry when needed): \(error)")
-                }
-            }
+        // Small delay to ensure UI updates
+        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+        
+        // Prepare model (download if needed, or load if already downloaded)
+        do {
+            print("🔥 Preparing model...")
+            try await ModelManager.shared.prepareModel()
+            print("✅ Model ready!")
+        } catch {
+            print("⚠️ Model preparation failed (will retry when needed): \(error)")
+            // Optional: You could show an alert or error message to the user here
         }
     }
     

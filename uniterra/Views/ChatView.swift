@@ -9,7 +9,7 @@ import SwiftUI
 
 struct ChatView: View {
     
-    @Environment(AuthManager.self) var authManager
+    @EnvironmentObject var authManager: AuthManager
     @State var messageManager: MessageManager
     let roomName: String
     
@@ -154,6 +154,20 @@ struct ChatView: View {
                     .font(.caption2)
                     .foregroundColor(.white.opacity(0.7))
                 Spacer()
+                
+                // Accept button - puts translation into input field
+                Button {
+                    currentMessageText = translation
+                    translationResult = nil
+                    modelThoughts = ""
+                    showThoughts = false
+                } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(Color.green)
+                        .font(.system(size: 20))
+                }
+                
+                // Close button
                 Button {
                     translationResult = nil
                     modelThoughts = ""
@@ -161,6 +175,7 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.white.opacity(0.6))
+                        .font(.system(size: 20))
                 }
             }
             .padding(.horizontal, 12)

@@ -8,36 +8,24 @@
 import Foundation
 
 // Bridge to the actual LlamaRunner (Objective-C++)
-final class LlamaManager: LLMRuntime {
+final class LlamaManager: LLMRuntime, @unchecked Sendable {
     private var runner: LlamaRunner?
     private let queue = DispatchQueue(label: "com.uniterra.llama", qos: .userInitiated)
     
-    func loadModel(at localURL: URL, context: Int) throws {
+    func loadModel(at localURL: URL, context: Int) async throws {
         // Clean up any existing runner
         runner?.cleanup()
         
-        // Create runner on background queue to avoid blocking
-        let semaphore = DispatchSemaphore(value: 0)
-        var loadError: Error?
-        
-        queue.async { [weak self] in
-            // This loads the 4GB model - happens on background queue now!
-            self?.runner = LlamaRunner(modelPath: localURL.path, contextSize: Int32(context))
-            if self?.runner == nil {
-                loadError = ModelError.runtimeUnavailable
+        // Load model on background queue without blocking
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async { [weak self] in
+                // This loads the 4GB model - happens on background queue
+                let newRunner = LlamaRunner(modelPath: localURL.path, contextSize: Int32(context))
+                
+                // Check if runner was successfully created (it's non-optional but might be invalid)
+                self?.runner = newRunner
+                continuation.resume()
             }
-            semaphore.signal()
-        }
-        
-        // Wait for background loading to complete
-        semaphore.wait()
-        
-        if let error = loadError {
-            throw error
-        }
-        
-        guard runner != nil else {
-            throw ModelError.runtimeUnavailable
         }
     }
     

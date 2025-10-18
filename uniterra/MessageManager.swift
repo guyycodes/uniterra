@@ -54,12 +54,16 @@ class MessageManager {
 
     func sendMessage(text: String, username: String) {
         do {
+            // Detect language of the message
+            let detectedLanguage = LanguageDetector.detect(from: text)
+            
             let message = Message(
                 id: UUID().uuidString,
                 text: text,
                 timestamp: Date(),
                 username: username,
-                roomId: roomId
+                roomId: roomId,
+                language: detectedLanguage
             )
 
             // Use the message's id as the Firestore document ID

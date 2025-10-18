@@ -10,20 +10,20 @@ import FirebaseAuth
 import FirebaseFirestore
 
 @MainActor
-@Observable
-class AuthManager {
+class AuthManager: ObservableObject {  // ← Changed from @Observable
 
-    var user: User?
-    var userProfile: UserProfile?
+    @Published var user: User?  // ← Add @Published
+    @Published var userProfile: UserProfile?  // ← Add @Published
+    @Published var isSignedIn: Bool = false  // ← Add @Published
+    @Published var errorMessage: String? = nil  // ← Add @Published
+    
     let isMocked: Bool
-    var isSignedIn: Bool = false
-    var errorMessage: String? = nil
 
     var userEmail: String? {
         isMocked ? "kingsley@dog.com" : user?.email
     }
 
-    @ObservationIgnored private var handle: AuthStateDidChangeListenerHandle?
+    private var handle: AuthStateDidChangeListenerHandle?  // ← Remove @ObservationIgnored
     private let db = Firestore.firestore()
 
     init(isMocked: Bool = false) {

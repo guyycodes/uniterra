@@ -10,7 +10,7 @@ import SwiftUI
 struct SplashScreenView: View {
     @State private var flameScale: CGFloat = 0.5
     @State private var flameOpacity: Double = 0.5
-    @State private var flameRotation: Double = -5
+    @State private var flameRotation: Double = -2  // reduced rotation range
     @State private var glowIntensity: Double = 0.3
     
     var body: some View {
@@ -28,13 +28,12 @@ struct SplashScreenView: View {
             .ignoresSafeArea()
             
             VStack(spacing: 30) {
-                // Animated Flame
                 ZStack {
-                    // Glow effect
+                    // Glow effect with reduced blur
                     Image(systemName: "flame.fill")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 150, height: 150)
+                        .frame(width: 120, height: 120)  // reduced from 150
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [
@@ -45,14 +44,14 @@ struct SplashScreenView: View {
                                 endPoint: .bottom
                             )
                         )
-                        .blur(radius: 30)
-                        .scaleEffect(1.5)
+                        .blur(radius: 15)  // reduced from 30 to 15
+                        .scaleEffect(1.3)  // reduced from 1.5
                     
                     // Main flame
                     Image(systemName: "flame.fill")
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 120, height: 120)
+                        .frame(width: 110, height: 110)  // reduced from 120
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [
@@ -64,26 +63,23 @@ struct SplashScreenView: View {
                                 endPoint: .bottom
                             )
                         )
-                        .shadow(color: Color(hex: "#F6511E").opacity(0.8), radius: 20, x: 0, y: 10)
+                        .shadow(color: Color(hex: "#F6511E").opacity(0.7), radius: 10, x: 0, y: 5)  // reduced shadow
                         .scaleEffect(flameScale)
                         .opacity(flameOpacity)
                         .rotationEffect(.degrees(flameRotation))
                 }
                 
-                // App name
-                VStack(spacing: 8) {
-                    Text("Uniterra")
-                        .font(.system(size: 48, weight: .black, design: .rounded))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color(hex: "#F6511E"), Color(hex: "#FF8C37")],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
+                Text("Uniterra")
+                    .font(.system(size: 48, weight: .black, design: .rounded))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color(hex: "#F6511E"), Color(hex: "#FF8C37")],
+                            startPoint: .leading,
+                            endPoint: .trailing
                         )
-                        .shadow(color: Color(hex: "#F6511E").opacity(0.5), radius: 10, x: 0, y: 5)
-                }
-                .opacity(flameOpacity)
+                    )
+                    .shadow(color: Color(hex: "#F6511E").opacity(0.5), radius: 8, x: 0, y: 4)  // reduced shadow
+                    .opacity(flameOpacity)
             }
         }
         .onAppear {
@@ -92,22 +88,22 @@ struct SplashScreenView: View {
     }
     
     private func startAnimations() {
-        // Flame flicker animation
+        // Flicker + scale up a bit
         withAnimation(
             .easeInOut(duration: 0.6)
-            .repeatForever(autoreverses: true)
+            .repeatCount(3, autoreverses: true)  // only repeat a few times
         ) {
             flameScale = 1.1
             flameOpacity = 1.0
-            glowIntensity = 0.8
+            glowIntensity = 0.7  // reduced from 0.8
         }
         
-        // Flame sway animation
+        // Sway back and forth slightly
         withAnimation(
-            .easeInOut(duration: 1.2)
-            .repeatForever(autoreverses: true)
+            .easeInOut(duration: 1.0)
+            .repeatCount(3, autoreverses: true)  // also limit repeats
         ) {
-            flameRotation = 5
+            flameRotation = 2  // reduced from 5
         }
     }
 }

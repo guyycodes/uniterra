@@ -12,5 +12,6 @@ struct Message: Hashable, Identifiable, Codable {
     let text: String
     let timestamp: Date
     let username: String
-    let roomId: String // <-- Add roomId
+    let roomId: String
+    let language: String?  // Language of the message text
 }

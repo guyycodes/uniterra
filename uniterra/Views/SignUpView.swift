@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SignUpView: View {
     
-    @Environment(AuthManager.self) var authManager
+    @EnvironmentObject var authManager: AuthManager
     @Environment(\.dismiss) var dismiss
     
     @State private var email: String = ""
@@ -309,5 +309,5 @@ struct SignUpView: View {
 
 #Preview {
     SignUpView()
-        .environment(AuthManager())
+        .environmentObject(AuthManager())
 }

@@ -18,6 +18,13 @@ final class ModelManager: ObservableObject {
 
     /// Configure before first use (e.g., in App start).
     func configure(_ config: Config) {
+        // Clean up existing model if switching to a different one
+        if isLoaded {
+            runtime?.cancel()
+            runtime = nil
+            isLoaded = false
+            downloadProgress = nil
+        }
         self.config = config
     }
 
@@ -52,7 +59,7 @@ final class ModelManager: ObservableObject {
 
         // 3) Load once
         if !isLoaded {
-            try runtime.loadModel(at: localURL, context: config.contextLength)
+            try await runtime.loadModel(at: localURL, context: config.contextLength)
             isLoaded = true
         }
     }
@@ -179,7 +186,7 @@ enum ModelError: LocalizedError {
 // MARK: - Runtime abstraction
 
 protocol LLMRuntime {
-    func loadModel(at localURL: URL, context: Int) throws
+    func loadModel(at localURL: URL, context: Int) async throws
     func generate(
         systemPrompt: String,
         userPrompt: String,
