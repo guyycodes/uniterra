@@ -14,8 +14,7 @@ struct ChatRoomsView: View {
     @State private var scrollOffset: CGFloat = 0
     @State private var warmupManager: MessageManager?
     @State private var privateRooms: [ChatRoom] = []
-    @State private var showingQRCode: Bool = false
-    @State private var selectedPrivateRoom: ChatRoom?
+    @State private var roomToShowQR: ChatRoom? = nil  // Single state: nil = hidden, has room = show QR
     @State private var showingScanner: Bool = false
     @State private var scannedCode: String?
     @State private var showingAccessDenied: Bool = false
@@ -43,10 +42,8 @@ struct ChatRoomsView: View {
             }) { sheetInfo in
                 activeSheetView(sheetInfo)
             }
-            .sheet(isPresented: $showingQRCode) {
-                if let room = selectedPrivateRoom {
-                    QRCodeModal(room: room)
-                }
+            .sheet(item: $roomToShowQR) { room in
+                QRCodeModal(room: room)
             }
             .sheet(isPresented: $showingScanner) {
                 QRScannerView(scannedCode: $scannedCode)
@@ -193,7 +190,7 @@ struct ChatRoomsView: View {
     
     private var headerSection: some View {
         VStack(spacing: 16) {
-            Text("🔥 Uniterra 🔥")
+            Text("🔥 TranslateMe 🔥")
                 .font(.system(size: 52, weight: .black, design: .rounded))
                 .foregroundStyle(
                     LinearGradient(
@@ -286,25 +283,25 @@ struct ChatRoomsView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(privateRooms) { room in
-                                PrivateRoomTile(
+                                PrivateRoomTileWrapper(
                                     room: room,
+                                    onTap: {
+                                        warmupManager = MessageManager(roomId: room.id)
+                                        activeSheet = .rules(room)
+                                    },
+                                    onLongPress: {
+                                        let createdRooms = UserDefaults.standard.stringArray(forKey: createdRoomsKey) ?? []
+                                        if createdRooms.contains(room.id) {
+                                            // Single state update - guaranteed to work
+                                            roomToShowQR = room
+                                        } else {
+                                            showingAccessDenied = true
+                                        }
+                                    },
                                     onDelete: {
                                         deletePrivateRoom(room)
                                     }
                                 )
-                                .onTapGesture {
-                                    warmupManager = MessageManager(roomId: room.id)
-                                    activeSheet = .rules(room)
-                                }
-                                .onLongPressGesture {
-                                    selectedPrivateRoom = room
-                                    let createdRooms = UserDefaults.standard.stringArray(forKey: createdRoomsKey) ?? []
-                                    if createdRooms.contains(room.id) {
-                                        showingQRCode = true
-                                    } else {
-                                        showingAccessDenied = true
-                                    }
-                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -390,8 +387,7 @@ struct ChatRoomsView: View {
             await authManager.addPrivateRoom(roomId)
         }
         
-        selectedPrivateRoom = newRoom
-        showingQRCode = true
+        roomToShowQR = newRoom  // This triggers the QR modal to show
     }
     
     private func deletePrivateRoom(_ room: ChatRoom) {
@@ -508,6 +504,53 @@ private enum ActiveSheet: Identifiable {
 
 // MARK: - Private Room Tile
 
+// MARK: - PrivateRoomTileWrapper with Haptic and Visual Feedback
+
+struct PrivateRoomTileWrapper: View {
+    let room: ChatRoom
+    let onTap: () -> Void
+    let onLongPress: () -> Void
+    let onDelete: () -> Void
+    
+    @State private var isPressed = false
+    
+    var body: some View {
+        PrivateRoomTile(
+            room: room,
+            onDelete: onDelete
+        )
+        .scaleEffect(isPressed ? 0.93 : 1.0)  // Visual feedback - shrink when pressed
+        .opacity(isPressed ? 0.8 : 1.0)  // Visual feedback - dim when pressed
+        .animation(.easeInOut(duration: 0.1), value: isPressed)
+        .onTapGesture {
+            // Quick tap
+            onTap()
+        }
+        .onLongPressGesture(
+            minimumDuration: 0.5,
+            maximumDistance: .infinity,
+            pressing: { pressing in
+                // This is called when press state changes
+                isPressed = pressing
+                if pressing {
+                    // Haptic feedback when long press starts
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                    impactFeedback.impactOccurred()
+                }
+            },
+            perform: {
+                // This is called when long press completes
+                // Another haptic to confirm action
+                let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
+                impactFeedback.impactOccurred()
+                onLongPress()
+            }
+        )
+    }
+}
+
+// MARK: - PrivateRoomTile
+
 struct PrivateRoomTile: View {
     let room: ChatRoom
     let onDelete: () -> Void
@@ -522,9 +565,23 @@ struct PrivateRoomTile: View {
                     .font(.caption.bold())
                     .foregroundColor(.white)
                 
-                Text("Hold for QR")
-                    .font(.caption2)
-                    .foregroundColor(.white.opacity(0.6))
+                HStack(spacing: 2) {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.system(size: 10))
+                    Text("Hold for QR")
+                }
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.8))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule()
+                        .fill(Color.white.opacity(0.15))
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
+                        )
+                )
             }
             
             VStack {
@@ -551,9 +608,17 @@ struct PrivateRoomTile: View {
         .cornerRadius(20)
         .overlay(
             RoundedRectangle(cornerRadius: 20)
-                .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.white.opacity(0.5), Color.white.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.5
+                )
         )
         .shadow(color: Color(hex: "#9333EA").opacity(0.4), radius: 8, x: 0, y: 4)
+        .shadow(color: Color(hex: "#EC4899").opacity(0.3), radius: 12, x: 0, y: 0)  // Glow effect
     }
 }
 

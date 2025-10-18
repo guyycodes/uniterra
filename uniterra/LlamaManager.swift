@@ -94,13 +94,27 @@ struct ModelDefinition {
 }
 
 extension ModelDefinition {
+    // Helper to get optimal context length based on device memory
+    static var optimalContextLength: Int {
+        let totalMemory = ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024) // GB
+        
+        // Only iPhone 16 Pro and newer have enough usable RAM for large context
+        // iPhone 15 Pro Max has 8GB total but only ~4GB usable
+        if totalMemory >= 12 {  // iPhone 16 Pro/Pro Max (future devices)
+            return 456
+        } else {
+            // Everything else gets conservative context to avoid crashes
+            return 256
+        }
+    }
+    
     static let qwen8BInstruct = ModelDefinition(
         id: "qwen-8b-instruct",
         name: "Qwen3 8B Instruct",
         huggingFaceURL: "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
         filename: "Qwen3-8B-Q4_K_M.gguf",
         sha256: "", // Checksum verification disabled for development
-        contextLength: 456,
+        contextLength: optimalContextLength,  // Device-specific context size
         description: "Powerful 8B model with thinking mode"
     )
     
@@ -110,7 +124,7 @@ extension ModelDefinition {
         huggingFaceURL: "https://huggingface.co/bartowski/Qwen2.5-7B-Instruct-GGUF/resolve/main/Qwen2.5-7B-Instruct-Q4_K_M.gguf",
         filename: "Qwen2.5-7B-Instruct-Q4_K_M.gguf",
         sha256: "", // Checksum verification disabled for development
-        contextLength: 456,
+        contextLength: optimalContextLength,  // Device-specific context size
         description: "Efficient 7B model"
     )
     

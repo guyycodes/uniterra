@@ -57,6 +57,11 @@ struct uniterraApp: App {
                     }
                 }
             }
+            .overlay(alignment: .top) {
+                // Global model download/loading progress indicator
+                GlobalModelProgress()
+                    .ignoresSafeArea(.all, edges: .horizontal)
+            }
             .onAppear {
                 // Hide splash screen after 2 seconds
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {

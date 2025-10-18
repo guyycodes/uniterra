@@ -69,7 +69,7 @@ struct SplashScreenView: View {
                         .rotationEffect(.degrees(flameRotation))
                 }
                 
-                Text("Uniterra")
+                Text("TranslateMe")
                     .font(.system(size: 48, weight: .black, design: .rounded))
                     .foregroundStyle(
                         LinearGradient(

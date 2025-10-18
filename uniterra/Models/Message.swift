@@ -14,4 +14,5 @@ struct Message: Hashable, Identifiable, Codable {
     let username: String
     let roomId: String
     let language: String?  // Language of the message text
+    var translations: [String: String]?  // Dictionary of translations by language
 }

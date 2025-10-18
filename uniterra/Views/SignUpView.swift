@@ -38,7 +38,7 @@ struct SignUpView: View {
                 VStack(spacing: 30) {
                     // Title
                     VStack(spacing: 10) {
-                        Text("🔥 Uniterra 🔥")
+                        Text("🔥 TranslateMe 🔥")
                             .font(.system(size: 42, weight: .black, design: .rounded))
                             .foregroundColor(.white)
                             .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)

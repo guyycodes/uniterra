@@ -34,12 +34,12 @@ struct LoginView: View {
                 Spacer()
                 
                 VStack(spacing: 10) {
-                    Text("🔥 Uniterra 🔥")
+                    Text("🔥 TranslateMe 🔥")
                         .font(.system(size: 48, weight: .black, design: .rounded))
                         .foregroundColor(.white)
                         .shadow(color: .black.opacity(0.5), radius: 8, x: 0, y: 4)
                     
-                    Text("Translation Servers")
+                    Text("LLM Chat Servers")
                         .font(.title2)
                         .fontWeight(.semibold)
                         .foregroundColor(.white.opacity(0.95))

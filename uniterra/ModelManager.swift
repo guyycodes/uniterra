@@ -111,6 +111,72 @@ final class ModelManager: ObservableObject {
 
     /// Convenience to check readiness from UI.
     var isReady: Bool { isLoaded }
+    
+    /// Get currently loaded model info
+    var currentModelInfo: (name: String, size: String)? {
+        guard let config = config, isLoaded else { return nil }
+        
+        // Get file size if exists
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let modelPath = documentsDir.appendingPathComponent(config.modelFilename)
+        
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: modelPath.path),
+           let fileSize = attrs[.size] as? Int64 {
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            let sizeString = formatter.string(fromByteCount: fileSize)
+            return (config.modelFilename, sizeString)
+        }
+        
+        return (config.modelFilename, "Unknown size")
+    }
+    
+    /// Clear loaded model from memory
+    func clearFromMemory() {
+        runtime?.cancel()
+        runtime = nil
+        isLoaded = false
+        downloadProgress = nil
+    }
+    
+    /// Delete model file from disk
+    func deleteModelFile(_ filename: String) throws {
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let modelPath = documentsDir.appendingPathComponent(filename)
+        
+        // Clear from memory if this is the loaded model
+        if config?.modelFilename == filename {
+            clearFromMemory()
+            config = nil
+        }
+        
+        // Delete the file
+        if FileManager.default.fileExists(atPath: modelPath.path) {
+            try FileManager.default.removeItem(at: modelPath)
+        }
+    }
+    
+    /// Check if a model file exists on disk
+    static func isModelDownloaded(_ filename: String) -> Bool {
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let modelPath = documentsDir.appendingPathComponent(filename)
+        return FileManager.default.fileExists(atPath: modelPath.path)
+    }
+    
+    /// Get size of downloaded model
+    static func getModelSize(_ filename: String) -> String? {
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let modelPath = documentsDir.appendingPathComponent(filename)
+        
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: modelPath.path),
+              let fileSize = attrs[.size] as? Int64 else {
+            return nil
+        }
+        
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: fileSize)
+    }
 
     // MARK: - Internals
 
@@ -119,6 +185,7 @@ final class ModelManager: ObservableObject {
     @Published private(set) var isLoaded: Bool = false
     @Published private(set) var isPreparing: Bool = false
     @Published private(set) var downloadProgress: Double? = nil
+    @Published var isModalShowing: Bool = false  // Track if RulesModal is showing
 
     private var config: Config?
     private var runtime: LLMRuntime?
@@ -138,16 +205,20 @@ extension ModelManager {
         var contextLength: Int = 256
 
         // Default generation params for translation
-        var temperature: Float = 0.2
-        var topP: Float = 0.95
-        var topK: Int32 = 64
-        var repeatPenalty: Float = 1.05
-        var maxTokens: Int32 = 256
+        var temperature: Float = 0.2      // Low = consistent translations
+        var topP: Float = 0.95            // Standard quality threshold
+        var topK: Int32 = 40              // Reduced for more focused output
+        var repeatPenalty: Float = 1.05   // Prevent repetition
+        var maxTokens: Int32 = 200        // Enough for 5-6 sentences
 
         // Prompts
         var systemPrompt: String =
         """
-        You are a professional translator. Output only the translated text. Keep meaning, tone, numbers, names, emoji, and punctuation. Do not explain. If source and target language are the same, return the input unchanged.
+        You are a professional translator.
+        IMPORTANT: Keep thinking brief and focused - limit to 5 seconds of consideration.
+        Output only the translated text. 
+        Keep meaning, tone, numbers, names, emoji, and punctuation. 
+        Do not explain.
         """
 
         var userTemplate: String =

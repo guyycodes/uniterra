@@ -17,6 +17,8 @@ struct RulesModal: View {
     @State private var selectedLanguage: String = ""
     @State private var isUpdatingLanguage: Bool = false
     @State private var selectedModelId: String = UserDefaults.standard.string(forKey: "selectedModelId") ?? ModelDefinition.qwen8BInstruct.id
+    @State private var showDeleteConfirmation = false
+    @State private var modelToDelete: ModelDefinition?
 
     var body: some View {
         ZStack {
@@ -39,6 +41,26 @@ struct RulesModal: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .onAppear {
+            // Let ModelManager know modal is showing (hides global progress)
+            modelManager.isModalShowing = true
+        }
+        .onDisappear {
+            // Modal closed, allow global progress to show if still downloading
+            modelManager.isModalShowing = false
+        }
+        .alert("Delete Model", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {
+                modelToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                confirmDeleteModel()
+            }
+        } message: {
+            if let model = modelToDelete {
+                Text("Are you sure you want to delete \(model.name)? This will free up \(ModelManager.getModelSize(model.filename) ?? "several GB") of storage.")
+            }
+        }
     }
     
     // MARK: - Background
@@ -148,9 +170,25 @@ struct RulesModal: View {
     // MARK: - Model Selection Section
     private var modelSelectionSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Translation Model")
-                .font(.headline)
-                .foregroundColor(.white)
+            HStack {
+                Text("Translation Model")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                
+                Spacer()
+                
+                // Show currently loaded model
+                if let info = modelManager.currentModelInfo {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                            .font(.caption)
+                            .foregroundColor(Color(hex: "#FFD700"))
+                        Text("Loaded")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+            }
             
             Text("Select the AI model for translation")
                 .font(.subheadline)
@@ -208,20 +246,50 @@ struct RulesModal: View {
                         .fontWeight(.medium)
                         .foregroundColor(.white)
                     
-                    if isModelDownloaded(model) {
-                        Image(systemName: "checkmark.seal.fill")
+                    // Show if downloaded
+                    if ModelManager.isModelDownloaded(model.filename) {
+                        Image(systemName: "arrow.down.circle.fill")
                             .foregroundColor(Color(hex: "#10B981"))
+                            .font(.caption)
+                    }
+                    
+                    // Show if currently loaded
+                    if modelManager.isLoaded && modelManager.currentModelInfo?.name == model.filename {
+                        Image(systemName: "bolt.fill")
+                            .foregroundColor(Color(hex: "#FFD700"))
                             .font(.caption)
                     }
                 }
                 
-                Text(model.description)
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.6))
+                HStack(spacing: 8) {
+                    Text(model.description)
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.6))
+                    
+                    // Show file size if downloaded
+                    if let size = ModelManager.getModelSize(model.filename) {
+                        Text("• \(size)")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                }
             }
             
             Spacer()
             
+            // Delete button if downloaded
+            if ModelManager.isModelDownloaded(model.filename) {
+                Button {
+                    deleteModel(model)
+                } label: {
+                    Image(systemName: "trash.circle.fill")
+                        .foregroundColor(Color.red.opacity(0.8))
+                        .font(.system(size: 22))
+                }
+                .padding(.trailing, 8)
+            }
+            
+            // Selection radio button
             Image(systemName: selectedModelId == model.id ? "checkmark.circle.fill" : "circle")
                 .foregroundColor(
                     selectedModelId == model.id
@@ -397,9 +465,27 @@ struct RulesModal: View {
         }
     }
     
-    private func isModelDownloaded(_ model: ModelDefinition) -> Bool {
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let modelPath = documentsDir.appendingPathComponent(model.filename)
-        return FileManager.default.fileExists(atPath: modelPath.path)
+    private func deleteModel(_ model: ModelDefinition) {
+        modelToDelete = model
+        showDeleteConfirmation = true
+    }
+    
+    private func confirmDeleteModel() {
+        guard let model = modelToDelete else { return }
+        
+        do {
+            try ModelManager.shared.deleteModelFile(model.filename)
+            // If we deleted the selected model, switch to the other one
+            if selectedModelId == model.id {
+                let otherModel = ModelDefinition.availableModels.first { $0.id != model.id }
+                selectedModelId = otherModel?.id ?? ModelDefinition.qwen8BInstruct.id
+                UserDefaults.standard.set(selectedModelId, forKey: "selectedModelId")
+            }
+        } catch {
+            print("Failed to delete model: \(error)")
+        }
+        
+        modelToDelete = nil
+        showDeleteConfirmation = false
     }
 }

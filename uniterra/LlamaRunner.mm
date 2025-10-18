@@ -10,12 +10,40 @@
 #include "ggml.h"
 #include <vector>
 #include <string>
+#import <sys/utsname.h>
 
 @implementation LlamaRunner {
     llama_model *model;
     llama_context *ctx;
     llama_sampler *sampler;
     int32_t contextSize;  // Store context size for recreation
+}
+
+// Helper method to check if device is memory-constrained
+// Only iPhone 16 Pro/Pro Max and newer Pro models have enough RAM
++ (BOOL)isMemoryConstrainedDevice {
+    struct utsname systemInfo;
+    uname(&systemInfo);
+    NSString *deviceModel = [NSString stringWithCString:systemInfo.machine encoding:NSUTF8StringEncoding];
+    
+    // ONLY these models have enough memory for full acceleration:
+    // iPhone 16 Pro and Pro Max (and future 17+ Pro models)
+    NSArray *highMemoryModels = @[
+        @"iPhone17,", // Future iPhone 17 Pro series
+        @"iPhone16,", // iPhone 16 Pro (if this is the identifier)
+        // Note: We'll need to update these when actual identifiers are known
+    ];
+    
+    for (NSString *model in highMemoryModels) {
+        if ([deviceModel hasPrefix:model] || [deviceModel isEqualToString:model]) {
+            NSLog(@"🚀 High-memory device detected: %@", deviceModel);
+            return NO; // NOT constrained
+        }
+    }
+    
+    // Everything else is memory-constrained (including iPhone 15 Pro Max)
+    NSLog(@"📱 Detected memory-constrained device: %@", deviceModel);
+    return YES; // IS constrained
 }
 
 - (instancetype)initWithModelPath:(NSString *)modelPath contextSize:(int)ctxSize {
@@ -33,9 +61,22 @@
             NSLog(@"✅ llama_backend initialized (one-time global init)");
         });
         
-        // Model parameters
+        // Check if we need memory optimizations
+        BOOL isConstrained = [[self class] isMemoryConstrainedDevice];
+        
+        // Model parameters - adjust based on device capabilities
         llama_model_params model_params = llama_model_default_params();
-        model_params.n_gpu_layers = 999; // 🔥 Offload all layers to Metal!
+        
+        if (isConstrained) {
+            // iPhone 15 Pro Max and older: minimal GPU to stay under 4GB
+            model_params.n_gpu_layers = 15; // Only offload 15 layers to Metal
+            NSLog(@"⚠️ Using minimal GPU layers (15) for memory-constrained device");
+        } else {
+            // iPhone 16 Pro and newer: use full acceleration
+            model_params.n_gpu_layers = 999; // Offload all layers to Metal
+            NSLog(@"✅ Using full GPU acceleration (999 layers) - iPhone 16 Pro or newer");
+        }
+        
         model_params.use_mmap = true;
         model_params.use_mlock = false;
         
@@ -50,10 +91,20 @@
         
         NSLog(@"✅ Model loaded successfully");
         
-        // Context parameters
+        // Context parameters - adjust based on device capabilities
         llama_context_params ctx_params = llama_context_default_params();
         ctx_params.n_ctx = ctxSize;
-        ctx_params.n_batch = 512;
+        
+        if (isConstrained) {
+            // iPhone 14 and older: smaller batch size to save memory
+            ctx_params.n_batch = 128;
+            NSLog(@"⚠️ Using reduced batch size (128) for memory-constrained device");
+        } else {
+            // iPhone 15 Pro and newer: larger batch for better performance
+            ctx_params.n_batch = 512;
+            NSLog(@"✅ Using full batch size (512)");
+        }
+        
         ctx_params.n_threads = 4;
         
         // Create context
@@ -97,7 +148,7 @@
     ctx_params.n_batch = 512;
     ctx_params.n_threads = 4;
     
-    ctx = llama_new_context_with_model(model, ctx_params);
+    ctx = llama_init_from_model(model, ctx_params);
     if (!ctx) {
         NSLog(@"❌ Failed to recreate context");
         return nil;
