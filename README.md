@@ -13,7 +13,7 @@ The following **required** functionality is completed:
 - [X] Users open the app to a TranslationMe home page with a place to enter a word, phrase or sentence, a button to translate, and another field that should initially be empty
 - [X] When users tap translate, the word written in the upper field translates in the lower field. The requirement is only that you can translate from one language to another.
 - [X] A history of translations can be stored (in a scroll view in the same screen, or a new screen)
-- [ X The history of translations can be erased
+- [X] The history of translations can be erased
  
 The following **optional** features are implemented:
 
@@ -31,9 +31,14 @@ Ensure compatability with older iOS devices
 
 Here's a walkthrough of implemented user stories:
 
-Here is a reminder on how to embed Loom videos on GitHub. Feel free to remove this reminder once you upload your README. 
-
-[Guide](https://www.youtube.com/watch?v=GA92eKlYio4)
+<div>
+    <a href="https://www.loom.com/share/d84c2269be1749fd84e53150dfefcb46">
+      <p>TranslateMe - Watch Video</p>
+    </a>
+    <a href="https://www.loom.com/share/d84c2269be1749fd84e53150dfefcb46">
+      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/d84c2269be1749fd84e53150dfefcb46-db4753c9668ebfe2-full-play.gif">
+    </a>
+  </div>
 
 ## Notes
 
