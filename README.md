@@ -52,8 +52,8 @@ Describe any challenges encountered while building the app.
 
     Copyright (c) 2025 Guy Morgan Beals. All Rights Reserved.
 
-    This software and associated documentation files (the "Software") are proprietary 
-    and confidential. Unauthorized copying, distribution, modification, or use of this 
+    This software and associated documentation files (the "Software") are proprietary. 
+    Unauthorized copying, distribution, modification, or use of this 
     Software, via any medium, is strictly prohibited without the express written 
     permission of the copyright owner.
 
