@@ -43,6 +43,10 @@ Here's a walkthrough of implemented user stories:
 ## Notes
 
 Describe any challenges encountered while building the app.
+- This project really was challenging and I spent a few days questioning if i could get it working, but eventually I got it.
+- Compiling llama.cpp was really confusing
+- linking a compiled library into swift was a challenge and not very straightforward
+- Understanding the system limitations for different devices is an ongoing battle
 
 ## License
 
