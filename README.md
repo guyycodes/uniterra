@@ -2,7 +2,7 @@
 
 Submitted by: **Guy Beals**
 
-**Translate Me** is an app that uses *b Param LLMS on iPhones to perform translation
+**Translate Me** is an app that uses *b Param LLMS on iPhones to perform translation, and offerers realtime messaging via firebase firestore.
 
 Time spent: **34** hours spent in total
 
