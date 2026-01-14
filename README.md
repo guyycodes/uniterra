@@ -41,7 +41,7 @@ Here's a walkthrough of implemented user stories:
 ## Notes
 
 Describe any challenges encountered while building the app.
-- This project really was challenging and I spent a few days questioning the compilation peocess, but eventually I got it.
+- This project really was challenging and I spent a few days questioning the compilation process, but eventually I got it.
 - Compiling llama.cpp was really confusing
 - Understanding the system limitations for different devices is an ongoing battle
 
